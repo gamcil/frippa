@@ -8,7 +8,7 @@ import re
 
 from collections import defaultdict
 
-from models import DomainHit, SignalPeptide, Match, Repeat
+from frippa.models import DomainHit, SignalPeptide, Match, Repeat
 
 
 def _hmmsearch(handle, evalue_cutoff=0.1):
@@ -91,7 +91,13 @@ def repeats_are_similar(repeats, threshold=0.5):
     return score / (total - 1) >= threshold
 
 
-def _radar(handle, max_repeat_length=40, z_score_cutoff=0, similarity=0.6):
+def _radar(
+    handle,
+    max_repeat_length=40,
+    z_score_cutoff=10,
+    cutsite_pct=0.5,
+    repeat_similarity=0.8,
+):
     """Parse RADAR results.
 
     Uses a multiline regex to match result blocks, i.e.
@@ -147,8 +153,8 @@ def _radar(handle, max_repeat_length=40, z_score_cutoff=0, similarity=0.6):
                 or repeat.z_score < z_score_cutoff
                 for repeat in repeats
             )
-            or not has_enough_cut_sites(repeats)
-            or not repeats_are_similar(repeats, similarity)
+            or not has_enough_cut_sites(repeats, threshold=cutsite_pct)
+            or not repeats_are_similar(repeats, threshold=repeat_similarity)
         ):
             continue
 
@@ -166,12 +172,10 @@ def _radar(handle, max_repeat_length=40, z_score_cutoff=0, similarity=0.6):
     return matches
 
 
-def parse(handle, program):
-    """
-    """
+def parse(handle, program, **kwargs):
     parsers = {"hmmsearch": _hmmsearch, "radar": _radar, "signalp": _signalp}
 
     if program not in parsers:
         raise ValueError(f"Invalid program specified: {program}")
 
-    return parsers[program](handle)
+    return parsers[program](handle, **kwargs)
