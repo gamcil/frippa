@@ -8,18 +8,7 @@ import re
 
 from collections import defaultdict
 
-
-class DomainHit:
-    __slots__ = ("domain", "start", "end", "evalue")
-
-    def __init__(self, domain, start, end, evalue):
-        self.domain = domain
-        self.start = int(start)
-        self.end = int(end)
-        self.evalue = float(evalue)
-
-    def __repr__(self):
-        return f"{self.domain} [{self.start}-{self.end}] {self.evalue}"
+from models import DomainHit, SignalPeptide, Match, Repeat
 
 
 def _hmmsearch(handle, evalue_cutoff=0.1):
@@ -48,24 +37,6 @@ def _hmmsearch(handle, evalue_cutoff=0.1):
             candidates[protein_id].append(domain)
 
     return candidates
-
-
-class SignalPeptide:
-    """The Repeat class represents individual repeat sequences from RADAR output.
-    """
-
-    __slots__ = ("start", "end", "site", "probability")
-
-    def __init__(self, start, end, site, probability):
-        self.start = int(start)
-        self.end = int(end)
-        self.site = site
-        self.probability = float(probability)
-
-    def __repr__(self):
-        return "{}\t{}\t{}\t{}".format(
-            self.start, self.end, self.site, self.probability
-        )
 
 
 def _signalp(handle):
@@ -97,46 +68,6 @@ def _signalp(handle):
     return hits
 
 
-class Match:
-    """The Match class represents distinct blocks from RADAR output.
-    """
-
-    __slots__ = ("score", "length", "diagonal", "bw_from", "bw_to", "level", "repeats")
-
-    def __init__(self, score, length, diagonal, bw_from, bw_to, level, repeats):
-        self.score = float(score)
-        self.length = int(length)
-        self.diagonal = int(diagonal)
-        self.bw_from = int(bw_from)
-        self.bw_to = int(bw_to)
-        self.level = int(level)
-        self.repeats = repeats
-
-    def __repr__(self):
-        return "score: {}, length: {}, {} repeats".format(
-            self.score, self.length, len(self.repeats)
-        )
-
-
-class Repeat:
-    """The Repeat class represents individual repeat sequences from RADAR output.
-    """
-
-    __slots__ = ("start", "end", "score", "z_score", "sequence")
-
-    def __init__(self, start, end, score, z_score, sequence):
-        self.start = int(start)
-        self.end = int(end)
-        self.score = float(score)
-        self.z_score = float(z_score)
-        self.sequence = sequence
-
-    def __repr__(self):
-        return "{}\t{}\t{}\t{}\t{}".format(
-            self.start, self.end, self.score, self.z_score, self.sequence
-        )
-
-
 def has_enough_cut_sites(repeats, threshold=0.5):
     """Check if number of cut sites in a list of repeats is over some threshold.
     """
@@ -146,7 +77,21 @@ def has_enough_cut_sites(repeats, threshold=0.5):
     return True if count / total >= threshold else False
 
 
-def _radar(handle, max_repeat_length=40):
+def repeats_are_similar(repeats, threshold=0.5):
+    """Compute similary between a collection of repeats.
+
+    Computes hamming distance between each pair of repeat sequences, then divides by the
+    number of repeats supplied (-1). Returns True if this score is over the specified
+    threshold.
+    """
+    score, total, length = 0, len(repeats), len(repeats[0].sequence)
+    for index in range(1, total):
+        one, two = repeats[index - 1 : index + 1]
+        score += sum(a == b for a, b in zip(one.sequence, two.sequence)) / length
+    return score / (total - 1) >= threshold
+
+
+def _radar(handle, max_repeat_length=40, z_score_cutoff=0, similarity=0.6):
     """Parse RADAR results.
 
     Uses a multiline regex to match result blocks, i.e.
@@ -184,7 +129,6 @@ def _radar(handle, max_repeat_length=40):
 
     matches = []
     for match in stats_pattern.finditer(handle):
-
         repeats = [
             Repeat(
                 repeat.group("start"),
@@ -196,10 +140,15 @@ def _radar(handle, max_repeat_length=40):
             for repeat in block_pattern.finditer(match.group("block"))
         ]
 
-        if (  # Either no repeats, too long or not enough cut sites
-            not repeats
-            or any(len(repeat.sequence) > max_repeat_length for repeat in repeats)
+        if (  # Either no repeats, too long, score too low, or not enough cut sites
+            len(repeats) <= 1
+            or any(
+                len(repeat.sequence) > max_repeat_length
+                or repeat.z_score < z_score_cutoff
+                for repeat in repeats
+            )
             or not has_enough_cut_sites(repeats)
+            or not repeats_are_similar(repeats, similarity)
         ):
             continue
 
@@ -214,7 +163,6 @@ def _radar(handle, max_repeat_length=40):
         )
 
         matches.append(match)
-
     return matches
 
 

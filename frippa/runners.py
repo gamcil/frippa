@@ -140,8 +140,15 @@ def radar(protein):
         sequence.write(protein.sequence.encode())
         sequence.flush()
 
+        # Run lfasta with BLOSUM50 matrix, then ensure we've gone back to start
         blosum.write(lfasta(sequence.name, "BLOSUM50").encode())
+        sequence.seek(0)
+
+        # Run lfasta with PAM250 matrix
         pam.write(lfasta(sequence.name, "PAM250").encode())
+
+        blosum.seek(0)
+        pam.seek(0)
 
         params = {
             "path": get_path("radar"),
