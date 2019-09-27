@@ -11,23 +11,23 @@ import logging
 
 from operator import attrgetter
 
-from models import Cluster, Organism
-from runners import hmmsearch, radar, signalp
-from results import parse
+from frippa.models import Cluster, Organism
+from frippa.runners import hmmsearch, radar, signalp
+from frippa.results import parse
 
 logging.basicConfig(level=logging.DEBUG)
 
 log = logging.getLogger(__name__)
 
 
-def find_DUF3328_proteins(organism):
+def find_DUF3328_proteins(organism, threads=1, evalue=0.1):
     """Find Proteins with DUF3328 hits in an Organism using hmmsearch."""
 
     log.debug("Launching hmmsearch")
-    domtbl = hmmsearch(organism)
+    domtbl = hmmsearch(organism, threads=threads)
 
     log.debug("Parsing results")
-    domtbl = parse(domtbl.split("\n"), "hmmsearch")
+    domtbl = parse(domtbl.split("\n"), "hmmsearch", evalue_cutoff=evalue)
 
     log.debug("Updating Protein objects")
     for record in organism.records.values():
@@ -76,12 +76,11 @@ def clusters_overlap(one, two, threshold=0.6):
     return len(overlap) / len(one) >= threshold or len(overlap) / len(two) >= threshold
 
 
-def initialise_clusters(organism, neighbour=10000):
+def initialise_clusters(organism, cutoff=10000):
     """Create Cluster objects for every DUF3328 protein."""
     organism.clusters = [
         Cluster(
-            get_surrounding_proteins(index, proteins, cutoff=neighbour),
-            scaffold=scaffold,
+            get_surrounding_proteins(index, proteins, cutoff=cutoff), scaffold=scaffold
         )
         for scaffold, proteins in organism.records.items()
         for index, protein in enumerate(proteins)
@@ -89,7 +88,7 @@ def initialise_clusters(organism, neighbour=10000):
     ]
 
 
-def merge_overlapping_clusters(organism, overlap=0.6):
+def merge_overlapping_clusters(organism, overlap=0.8):
     """Merge Clusters in an Organism if they overlap more than some threshold."""
     index = 1
     while index < len(organism.clusters):
@@ -116,13 +115,26 @@ def find_signal_peptides(organism):
         protein.signalp = output[protein.name]
 
 
-def find_repeats(organism):
+def find_repeats(
+    organism,
+    max_repeat_length=40,
+    z_score_cutoff=10,
+    cutsite_pct=0.6,
+    repeat_similarity=0.8,
+):
     for cluster in organism.clusters:
         for protein in cluster.proteins:
             if protein.duf:
                 continue
             try:
-                protein.repeats = parse(radar(protein), "radar")
+                protein.repeats = parse(
+                    radar(protein),
+                    "radar",
+                    max_repeat_length=max_repeat_length,
+                    z_score_cutoff=z_score_cutoff,
+                    cutsite_pct=cutsite_pct,
+                    repeat_similarity=repeat_similarity,
+                )
             except UnicodeDecodeError:
                 # bad continuation
                 log.error("RADAR failed on %s", protein.name)
@@ -162,27 +174,35 @@ def frippa(
     evalue=0.1,
     neighbours=10000,
     overlap=0.8,
-    repeat_max=40,
+    max_repeat_length=40,
     cutsite_pct=0.8,
     report_all=False,
+    z_score_cutoff=10,
+    repeat_similarity=0.8,
 ):
     """Main entry point to fRiPPa."""
 
-    log.info("Parsing GenBank file")
+    log.info("Parsing %s", genbank)
     organism = Organism.from_genbank(genbank)
 
     log.info("Searching for proteins with DUF3328 domains")
-    find_DUF3328_proteins(organism)
+    find_DUF3328_proteins(organism, threads, evalue)
 
     log.info("Collecting proteins within %s bp of a DUF3328 hit", neighbours)
-    initialise_clusters(organism, neighbours)
-    merge_overlapping_clusters(organism)
+    initialise_clusters(organism, cutoff=neighbours)
+    merge_overlapping_clusters(organism, overlap=overlap)
 
     log.info("Searching for signal peptides in neighbour proteins with SignalP")
     find_signal_peptides(organism)
 
     log.info("Searching for amino acid repeats in neighbour proteins with RADAR")
-    find_repeats(organism)
+    find_repeats(
+        organism,
+        max_repeat_length=max_repeat_length,
+        z_score_cutoff=z_score_cutoff,
+        cutsite_pct=cutsite_pct,
+        repeat_similarity=repeat_similarity,
+    )
 
     log.info("Finalising clusters")
     for cluster in organism.clusters:
@@ -214,12 +234,14 @@ def get_arguments():
     parser.add_argument(
         "-t",
         "--threads",
+        default=1,
         type=int,
         help="How many threads to use when running hmmsearch and SignalP",
     )
     parser.add_argument(
         "-e",
         "--evalue",
+        default=0.01,
         type=float,
         help="E-value cutoff to use when filtering hmmsearch results",
     )
@@ -230,16 +252,17 @@ def get_arguments():
         "--neighbours",
         type=float,
         default=10000,
-        help="Number of proteins to grab either side of a DUF3328 hit",
+        help="Number of base pair either side of a DUF3328 hit to grab proteins",
     )
     cluster.add_argument(
         "-v",
         "--overlap",
         type=float,
+        default="0.6",
         help="Maximum percentage of overlapping proteins before clusters are merged",
     )
     cluster.add_argument(
-        "-r",
+        "-ra",
         "--report_all",
         action="store_true",
         help="Report all clusters with DUF3328 hits, even if no repeat predictions",
@@ -247,19 +270,38 @@ def get_arguments():
 
     repeat = parser.add_argument_group("Repeat filtering")
     repeat.add_argument(
-        "-m", "--repeat_max", type=int, help="Maximum length of a detected repeat"
-    )
-    repeat.add_argument(
-        "-c",
+        "-cp",
         "--cutsite_pct",
         type=float,
+        default=0.5,
         help="Threshold for total cut sites in individual repeats",
     )
-
+    repeat.add_argument(
+        "-mrl",
+        "--max_repeat_length",
+        type=int,
+        default=40,
+        help="Maximum length of a repeat sequence."
+        " Long sequences tend to be red herrings",
+    )
+    repeat.add_argument(
+        "-rs",
+        "--repeat_similarity",
+        type=float,
+        default=0.8,
+        help="Average (hamming) similarity threshold for repeat sequences",
+    )
+    repeat.add_argument(
+        "-zc",
+        "--z_score_cutoff",
+        type=int,
+        default=0,
+        help="Minimum z-score for a repeat sequence",
+    )
     return parser.parse_args()
 
 
-if __name__ == "__main__":
+def main():
     args = get_arguments()
     frippa(
         args.genbank,
@@ -268,7 +310,12 @@ if __name__ == "__main__":
         evalue=args.evalue,
         neighbours=args.neighbours,
         overlap=args.overlap,
-        repeat_max=args.repeat_max,
-        cutsite_pct=args.cutsite_pct,
         report_all=args.report_all,
+        cutsite_pct=args.cutsite_pct,
+        max_repeat_length=args.max_repeat_length,
+        repeat_similarity=args.repeat_similarity,
     )
+
+
+if __name__ == "__main__":
+    main()
