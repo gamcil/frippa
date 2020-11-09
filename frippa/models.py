@@ -1,26 +1,19 @@
 #!/usr/bin/env python3
 
-"""
-"""
-
-import json
 
 from Bio import SeqIO
 
+from frippa import formatters
+
 
 class Cluster:
-    """Store proteins in a RiPP cluster, DUF3328 hits, precursor peptide.
+    """Stores proteins in a RiPP cluster, DUF3328 hits, precursor peptide.
 
-    Parameters
-    ----------
-    _proteins : list
-        Protein objects in this cluster.
-    duf : list
-        Indices in `proteins` of elements with DUF3328 hits.
-    precursors : list
-        Indices in `proteins` of elements with detected repeats (i.e. precursors)
-    signalp : list
-        Indicies in `proteins` of elements with signal peptides.
+    Parameters:
+        _proteins (list): Protein objects in this cluster.
+        duf (list): Indices in proteins of elements with DUF3328 hits.
+        precursors (list): Indices in proteins of elements with detected repeats (i.e. precursors)
+        signalp (list): Indices in proteins of elements with signal peptides.
     """
 
     def __init__(self, proteins, scaffold):
@@ -43,7 +36,8 @@ class Cluster:
 
     @property
     def is_valid(self):
-        return all([self.duf, self.precursors, self.signalp])
+        repeats_fine = [repeat in self.signalp for repeat in self.precursors]
+        return all([self.duf, repeats_fine])
 
     @property
     def start(self):
@@ -71,69 +65,29 @@ class Cluster:
 
     def summary(self, show_header=True):
         """Build a Protein summary table for this Cluster.
-
         e.g.
             Index   Protein     DUF3328   Precursor  Signal Peptide
             1       GENE_0001   X         -          -
             2       GENE_0002   -         X          -
             3       GENE_0003   -         -          X
-
         Pass 'hr' to `delimiter` for human readable format (i.e. spaced for pretty
         printing).
         """
-
-        def check(index):
-            return [
-                "X" if index in array else "-"
-                for array in (self.duf, self.precursors, self.signalp)
-            ]
-
-        def human_row(fields, protein_width):
-            return "{: <8}{: <{}}{: <10}{: <12}{}".format(
-                *fields[0:2], protein_width + 3, *fields[2:]
-            )
-
-        header = ["Index", "Protein", "DUF3328", "Precursor", "Signal Peptide"]
-        report = [header] if show_header else []
-
-        for index, protein in enumerate(self.proteins):
-            row = [index, protein.name, *check(index)]
-            report.append(row)
-
-        protein_width = max(7, max(len(p.name) for p in self.proteins))
-        report = [human_row(row, protein_width) for row in report]
-
-        repeats = "\n\n".join(
-            self.proteins[idx].name + "\n" + self.proteins[idx].summarise_repeats()
-            for idx in self.precursors
-        )
-
-        if not repeats:
-            repeats = "No repeats found..."
-
-        separator = "-" * len(report[0])
-
-        if show_header:
-            report[0] = "{}\n{}\n{}".format(separator, report[0], separator)
-
-        return "{}\n\n{}\n\n{}\n{}".format(self, repeats, "\n".join(report), separator)
+        return formatters.format_cluster(self, show_headers=show_header)
 
     @property
     def fasta(self):
-        """Return fasta record of all Proteins in the Cluster
-        """
+        """Builds FASTA record of all Proteins in the Cluster."""
         return "\n".join([p.fasta for p in self.proteins])
 
     @property
     def proteins_with_sites(self):
-        """Return proteins in this Cluster than contain Trypsin cut sites
-        """
+        """Returns proteins in this Cluster than contain Trypsin cut sites."""
+        sites = ["KK", "KR", "RR"]
         return [
             protein
             for protein in self.proteins
-            if "KK" in protein.translation
-            or "KR" in protein.translation
-            or "RR" in protein.translation
+            if any(site in protein.translation for site in sites)
         ]
 
     def add_proteins(self, proteins):
@@ -145,8 +99,7 @@ class Cluster:
 
 
 class Organism:
-    """Representation of a genome file.
-    """
+    """An organism."""
 
     def __init__(self, records):
         self.records = records
@@ -177,8 +130,7 @@ class Organism:
 
 
 class Protein:
-    """Representation of a Protein.
-    """
+    """A Protein sequence."""
 
     def __init__(self, name, sequence, scaffold, start, end, strand):
         self.name = name
@@ -238,6 +190,8 @@ class Protein:
 
 
 class DomainHit:
+    """A HMM profile domain hit."""
+
     __slots__ = ("domain", "start", "end", "evalue")
 
     def __init__(self, domain, start, end, evalue):
@@ -251,8 +205,7 @@ class DomainHit:
 
 
 class SignalPeptide:
-    """The Repeat class represents individual repeat sequences from RADAR output.
-    """
+    """Signal peptide hits from SignalP."""
 
     __slots__ = ("start", "end", "site", "probability")
 
@@ -269,8 +222,7 @@ class SignalPeptide:
 
 
 class Match:
-    """The Match class represents distinct blocks from RADAR output.
-    """
+    """Distinct blocks from RADAR output."""
 
     __slots__ = ("score", "length", "diagonal", "bw_from", "bw_to", "level", "repeats")
 
@@ -290,8 +242,7 @@ class Match:
 
 
 class Repeat:
-    """The Repeat class represents individual repeat sequences from RADAR output.
-    """
+    """Individual repeat sequences from RADAR output."""
 
     __slots__ = ("start", "end", "score", "z_score", "sequence")
 
