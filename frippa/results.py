@@ -30,7 +30,10 @@ def _hmmsearch(handle, evalue_cutoff=0.1):
         protein_id, *fields = line.strip().split()
 
         domain = DomainHit(
-            domain=fields[2], start=fields[18], end=fields[19], evalue=fields[11]
+            domain=fields[2],
+            start=int(fields[18]),
+            end=int(fields[19]),
+            evalue=float(fields[11])
         )
 
         if domain.evalue < evalue_cutoff:
@@ -93,6 +96,8 @@ def repeats_are_similar(repeats, threshold=0.5):
 
 def _radar(
     handle,
+    min_repeats=3,
+    min_repeat_length=8,
     max_repeat_length=40,
     z_score_cutoff=10,
     cutsite_pct=0.5,
@@ -147,9 +152,10 @@ def _radar(
         ]
 
         if (  # Either no repeats, too long, score too low, or not enough cut sites
-            len(repeats) <= 1
+            len(repeats) < min_repeats
             or any(
-                len(repeat.sequence) > max_repeat_length
+                len(repeat.sequence) < min_repeat_length
+                or len(repeat.sequence) > max_repeat_length
                 or repeat.z_score < z_score_cutoff
                 for repeat in repeats
             )
@@ -167,7 +173,6 @@ def _radar(
             match.group("level"),
             repeats,
         )
-
         matches.append(match)
     return matches
 
