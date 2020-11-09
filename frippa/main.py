@@ -1,10 +1,5 @@
 #!/usr/bin/env python3
 
-
-"""
-This module provides the command line interface, as well as main routines for fRiPPa.
-"""
-
 import argparse
 import itertools
 import logging
@@ -70,17 +65,12 @@ def get_surrounding_proteins(middle, proteins, cutoff=10000):
     return sorted(neighbours, key=attrgetter("start"))
 
 
-def clusters_overlap(one, two, threshold=0.6):
-    """Calculate overlap of proteins in two lists with respect to the first."""
-    overlap = set(one).intersection(two)
-    return len(overlap) / len(one) >= threshold or len(overlap) / len(two) >= threshold
-
-
 def initialise_clusters(organism, cutoff=10000):
     """Create Cluster objects for every DUF3328 protein."""
     organism.clusters = [
         Cluster(
-            get_surrounding_proteins(index, proteins, cutoff=cutoff), scaffold=scaffold
+            get_surrounding_proteins(index, proteins, cutoff=cutoff),
+            scaffold=scaffold
         )
         for scaffold, proteins in organism.records.items()
         for index, protein in enumerate(proteins)
@@ -88,12 +78,19 @@ def initialise_clusters(organism, cutoff=10000):
     ]
 
 
-def merge_overlapping_clusters(organism, overlap=0.8):
+def clusters_overlap(one, two):
+    """Test if two clusters share the same precursor and should be merged."""
+    one_peptides = set(one.proteins[i] for i in one.precursors)
+    two_peptides = set(two.proteins[i] for i in two.precursors)
+    return not one_peptides.isdisjoint(two_peptides)
+
+
+def merge_overlapping_clusters(organism, overlap=0.6):
     """Merge Clusters in an Organism if they overlap more than some threshold."""
     index = 1
     while index < len(organism.clusters):
-        one, two = organism.clusters[index - 1 : index + 1]
-        if clusters_overlap(one.proteins, two.proteins, overlap):
+        one, two = organism.clusters[index - 1: index + 1]
+        if clusters_overlap(one, two):
             log.debug("Merging %s and %s", one.location, two.location)
             one.add_proteins(two.proteins)
             del organism.clusters[index]
@@ -103,68 +100,74 @@ def merge_overlapping_clusters(organism, overlap=0.8):
 
 def find_signal_peptides(organism):
     proteins = list(
-        itertools.chain.from_iterable(cluster.proteins for cluster in organism.clusters)
+        itertools.chain.from_iterable(
+            cluster.proteins for cluster in organism.clusters
+        )
     )
-
     log.debug("Running SignalP on %s proteins", len(proteins))
-    output = parse(signalp(proteins).split("\n"), "signalp")
-
+    output = parse(
+        signalp(proteins).split("\n"),
+        "signalp"
+    )
     for protein in proteins:
         if protein.name not in output:
             continue
         protein.signalp = output[protein.name]
 
 
-def find_repeats(
-    organism,
+def find_repeats_in_sequence(
+    protein,
+    min_repeats=3,
+    min_repeat_length=8,
     max_repeat_length=40,
     z_score_cutoff=10,
     cutsite_pct=0.6,
     repeat_similarity=0.8,
 ):
-    for cluster in organism.clusters:
-        for protein in cluster.proteins:
-            if protein.duf:
-                continue
-            try:
-                protein.repeats = parse(
-                    radar(protein),
-                    "radar",
-                    max_repeat_length=max_repeat_length,
-                    z_score_cutoff=z_score_cutoff,
-                    cutsite_pct=cutsite_pct,
-                    repeat_similarity=repeat_similarity,
-                )
-            except UnicodeDecodeError:
-                # bad continuation
-                log.error("RADAR failed on %s", protein.name)
+    repeats = []
+    try:
+        repeats = parse(
+            radar(protein),
+            "radar",
+            min_repeats=min_repeats,
+            min_repeat_length=min_repeat_length,
+            max_repeat_length=max_repeat_length,
+            z_score_cutoff=z_score_cutoff,
+            cutsite_pct=cutsite_pct,
+            repeat_similarity=repeat_similarity,
+        )
+    except UnicodeDecodeError:
+        # bad continuation
+        log.error("RADAR failed on %s", protein.name)
+    return repeats
 
 
-def cluster_blast(organism):
-    """Compare clusters to prevously identified fungal RiPP clusters."""
-    return
-
-
-def compare_precursors(organism):
-    """Compare clusters against a collection of known fungal RiPP precursors.
-
-    """
-
-    # TODO also distribute FASTA of characterised clusters for DIAMOND
-    precursors = {
-        "asperipin": "FYYTGY",
-        "ustiloxin": "YAIG",
-        "phomopsin": "YVIPID",
-        "epichloecyclin": "INFKIPYTG",
-        "a-amanitin": "IWGIGCNP",
-        "phallacidin": "AWLVDCP",
-        "omphalotin": "WVIVVGVIGVIG",
-    }
-
-    for cluster in organism.clusters:
-        for duf_index in cluster.duf_hits:
-            # TODO: compare protein repeat to known
-            pass
+def find_repeats(
+    organism,
+    min_repeats=3,
+    min_repeat_length=8,
+    max_repeat_length=40,
+    z_score_cutoff=10,
+    cutsite_pct=0.6,
+    repeat_similarity=0.8,
+):
+    proteins = [
+        protein
+        for cluster in organism.clusters
+        for protein in cluster.proteins
+        if not protein.duf and protein.signalp
+    ]
+    log.debug("Running RADAR on %s proteins", len(proteins))
+    for protein in proteins:
+        protein.repeats = find_repeats_in_sequence(
+            protein,
+            min_repeats=min_repeats,
+            min_repeat_length=min_repeat_length,
+            max_repeat_length=max_repeat_length,
+            z_score_cutoff=z_score_cutoff,
+            cutsite_pct=cutsite_pct,
+            repeat_similarity=repeat_similarity,
+        )
 
 
 def frippa(
@@ -174,6 +177,8 @@ def frippa(
     evalue=0.1,
     neighbours=10000,
     overlap=0.8,
+    min_repeats=3,
+    min_repeat_length=8,
     max_repeat_length=40,
     cutsite_pct=0.8,
     report_all=False,
@@ -190,7 +195,6 @@ def frippa(
 
     log.info("Collecting proteins within %s bp of a DUF3328 hit", neighbours)
     initialise_clusters(organism, cutoff=neighbours)
-    merge_overlapping_clusters(organism, overlap=overlap)
 
     log.info("Searching for signal peptides in neighbour proteins with SignalP")
     find_signal_peptides(organism)
@@ -198,15 +202,19 @@ def frippa(
     log.info("Searching for amino acid repeats in neighbour proteins with RADAR")
     find_repeats(
         organism,
+        min_repeats=min_repeats,
+        min_repeat_length=min_repeat_length,
         max_repeat_length=max_repeat_length,
         z_score_cutoff=z_score_cutoff,
         cutsite_pct=cutsite_pct,
         repeat_similarity=repeat_similarity,
     )
 
-    log.info("Finalising clusters")
     for cluster in organism.clusters:
         cluster.count()
+
+    log.info("Finalising clusters")
+    merge_overlapping_clusters(organism)
 
     if not report_all:
         organism.remove_invalid_clusters()
@@ -277,7 +285,21 @@ def get_arguments():
         help="Threshold for total cut sites in individual repeats",
     )
     repeat.add_argument(
-        "-mrl",
+        "-mr",
+        "--min_repeats",
+        type=int,
+        default=3,
+        help="Minimum number of detected repeats"
+    )
+    repeat.add_argument(
+        "-min_rl",
+        "--min_repeat_length",
+        type=int,
+        default=8,
+        help="Minimum length of a repeat sequence."
+    )
+    repeat.add_argument(
+        "-max_rl",
         "--max_repeat_length",
         type=int,
         default=40,
@@ -312,6 +334,8 @@ def main():
         overlap=args.overlap,
         report_all=args.report_all,
         cutsite_pct=args.cutsite_pct,
+        min_repeats=args.min_repeats,
+        min_repeat_length=args.min_repeat_length,
         max_repeat_length=args.max_repeat_length,
         repeat_similarity=args.repeat_similarity,
     )
