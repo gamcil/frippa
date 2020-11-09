@@ -4,6 +4,7 @@
 Module for handling subprocess calls for hmmsearch, lfasta, RADAR and SignalP.
 """
 
+import os
 import shutil
 import subprocess
 
@@ -11,7 +12,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile as NTF
 
 
-ROOT_DIR = Path(__name__).resolve().parent.parent
+ROOT_DIR = Path(__name__).resolve().parent
 DATA_DIR = ROOT_DIR / "data"
 
 
@@ -78,20 +79,28 @@ def signalp(proteins, batch=1000):
     if not shutil.which("signalp"):
         raise FileNotFoundError("signalp not found on system $PATH")
 
-    fasta = make_fasta(proteins).encode()
-
-    with NTF() as tmp:
-        tmp.write(fasta)
+    fp = NTF("w", delete=False)
+    fasta = make_fasta(proteins)
+    output = None
+    try:
+        with fp:
+            fp.write(fasta)
         params = {
             "path": "signalp",
-            "-fasta": tmp.name,
+            "-fasta": fp.name,
             "-batch": str(batch),
             "-format": "short",
             "last": "-stdout",
         }
-        return subprocess.run(
-            make_command(params), stdout=subprocess.PIPE, universal_newlines=True
+        command = make_command(params)
+        output = subprocess.run(
+            command,
+            stdout=subprocess.PIPE,
+            universal_newlines=True,
         ).stdout
+    finally:
+        os.unlink(fp.name)
+    return output
 
 
 def lfasta(sequence, matrix):
