@@ -227,13 +227,12 @@ def frippa(
     else:
         log.info("Generating summary")
         report = "\n\n".join(cluster.summary() for cluster in organism.clusters)
-
         if output:
             log.info("Writing to %s", output)
             with open(output, "w") as out:
                 out.write(report)
-
-        print(report)
+        else:
+            print(report)
     return organism
 
 
