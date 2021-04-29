@@ -10,7 +10,9 @@ from frippa.models import Cluster, Organism
 from frippa.runners import hmmsearch, radar, signalp
 from frippa.results import parse
 
-logging.basicConfig(level=logging.DEBUG)
+logging.basicConfig(
+    format="[%(asctime)s] %(levelname)s - %(message)s", datefmt="%H:%M:%S"
+)
 
 log = logging.getLogger(__name__)
 
