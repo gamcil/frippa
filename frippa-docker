@@ -25,7 +25,7 @@ WORKDIR="$(realpath .)"
 MOUNT="type=bind,source=${WORKDIR},target=${WORKDIR}"
 
 exec docker run --rm "${IT[@]}" \
-	--workdir "${WORKDIR}" \
-	--mount "${MOUNT}" \
-	frippa \
-	frippa "$@"
+  --workdir "${WORKDIR}" \
+  --mount "${MOUNT}" \
+  frippa \
+  frippa "$@"
