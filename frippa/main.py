@@ -107,7 +107,7 @@ def find_signal_peptides(organism):
             cluster.proteins for cluster in organism.clusters
         )
     )
-    log.debug("Running SignalP on %s proteins", len(proteins))
+    log.info("Running SignalP on %s proteins", len(proteins))
     output = parse(
         signalp(proteins).split("\n"),
         "signalp"
@@ -160,7 +160,7 @@ def find_repeats(
         for protein in cluster.proteins
         if not protein.duf and protein.signalp
     ]
-    log.debug("Running RADAR on %s proteins", len(proteins))
+    log.info("Running RADAR on %s proteins", len(proteins))
     for protein in proteins:
         protein.repeats = find_repeats_in_sequence(
             protein,
@@ -199,10 +199,10 @@ def frippa(
     log.info("Collecting proteins within %s bp of a DUF3328 hit", neighbours)
     initialise_clusters(organism, cutoff=neighbours)
 
-    log.info("Searching for signal peptides in neighbour proteins with SignalP")
+    log.info("Searching for signal peptides in neighbour proteins")
     find_signal_peptides(organism)
 
-    log.info("Searching for amino acid repeats in neighbour proteins with RADAR")
+    log.info("Searching for amino acid repeats in neighbour proteins")
     find_repeats(
         organism,
         min_repeats=min_repeats,
