@@ -20,7 +20,7 @@ Then, you can build a Docker image by:
 docker build -t frippa -f Dockerfile .
 ```
 
-Once you have built the image, the easiest way to use it is by using the [fRiPPA wrapper
+Once you have built the image, the easiest way to use it is by using the [wrapper BASH
 script](https://raw.githubusercontent.com/gamcil/frippa/master/frippa-docker). For
 example:
 
