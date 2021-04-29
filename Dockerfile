@@ -1,6 +1,7 @@
 FROM ubuntu:latest
-RUN apt-get update && \
-  apt-get install -y git hmmer python3 python3-pip wget build-essential --no-install-recommends
+RUN apt-get update && apt-get install -y \
+  git hmmer python3 python3-pip wget build-essential --no-install-recommends && \
+  rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
@@ -31,7 +32,8 @@ RUN wget https://sourceforge.net/projects/repeatradar/files/radar-1.1.5.tar.gz/d
   cd .. && rm radar-1.1.5.tar.gz
 
 # Get latest fRiPPa master
-RUN python3 -m pip install git+https://github.com/gamcil/frippa.git
+RUN python3 -m pip install git+https://github.com/gamcil/frippa.git && \
+ apt-get remove -y build-essential wget git
 
 # Add everything to PATH
 ENV PATH="$PATH:/app/signalp-5.0b/bin/:/app/fasta2/:/app/radar-1.1.5/"
