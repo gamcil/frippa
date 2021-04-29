@@ -13,7 +13,7 @@ from tempfile import NamedTemporaryFile as NTF
 
 
 ROOT_DIR = Path(__file__).parent.resolve()
-DATA_DIR = ROOT_DIR.with_name("data")
+DATA_DIR = ROOT_DIR / "data"
 
 
 def get_path(*aliases):
