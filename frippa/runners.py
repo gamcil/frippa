@@ -12,7 +12,7 @@ from pathlib import Path
 from tempfile import NamedTemporaryFile as NTF
 
 
-ROOT_DIR = Path(__name__).resolve().parent
+ROOT_DIR = Path(__file__).parent.parent.resolve()
 DATA_DIR = ROOT_DIR / "data"
 
 
