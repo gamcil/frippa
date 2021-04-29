@@ -33,7 +33,7 @@ RUN wget https://sourceforge.net/projects/repeatradar/files/radar-1.1.5.tar.gz/d
 
 # Get latest fRiPPa master
 RUN python3 -m pip install git+https://github.com/gamcil/frippa.git && \
- apt-get remove -y build-essential wget git
+ apt-get remove -y build-essential
 
 # Add everything to PATH
 ENV PATH="$PATH:/app/signalp-5.0b/bin/:/app/fasta2/:/app/radar-1.1.5/"
