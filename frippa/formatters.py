@@ -51,7 +51,10 @@ def format_cluster(cluster, delimiter=None, show_headers=True):
             str(protein.start),
             str(protein.end),
             "+" if protein.strand == 1 else "-",
-            *check_index(index, cluster)
+            "X" if protein.duf else "-",
+            "X" if protein.repeats else "-",
+            "X" if protein.signalp else "-",
+            # *check_index(index, cluster)
         ]
         rows.append(row)
 

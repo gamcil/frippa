@@ -48,7 +48,6 @@ def make_command(params):
 
 def hmmsearch(organism, threads=1):
     """Search for DUF3328 profile hits in proteome and return hits."""
-
     params = {
         "path": get_path("hmmsearch"),
         "--cpu": str(threads),
@@ -56,7 +55,6 @@ def hmmsearch(organism, threads=1):
         "--domtblout": "/dev/stdout",
         "last": [DATA_DIR / "DUF3328.hmm", "-"],
     }
-
     return subprocess.run(
         make_command(params),
         input=organism.proteome,
