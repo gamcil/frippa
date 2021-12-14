@@ -16,9 +16,12 @@ class Cluster:
         signalp (list): Indices in proteins of elements with signal peptides.
     """
 
-    def __init__(self, proteins, scaffold):
+    def __init__(self, proteins, scaffold, sequence, start, end):
         self.proteins = proteins
         self.scaffold = scaffold
+        self.sequence = sequence
+        self.start = start
+        self.end = end
 
         self.duf = set()
         self.precursors = set()
@@ -39,13 +42,13 @@ class Cluster:
         repeats_fine = [repeat in self.signalp for repeat in self.precursors]
         return all([self.duf, repeats_fine])
 
-    @property
-    def start(self):
-        return self.proteins[0].start
+    # @property
+    # def start(self):
+    #     return self.proteins[0].start
 
-    @property
-    def end(self):
-        return self.proteins[-1].end
+    # @property
+    # def end(self):
+    #     return self.proteins[-1].end
 
     @property
     def location(self):
@@ -92,7 +95,12 @@ class Cluster:
 
     def add_proteins(self, proteins):
         for protein in proteins:
-            if protein in self.proteins:
+            if any(
+                protein.start == pro.start
+                and protein.end == pro.end
+                and protein.scaffold == pro.scaffold
+                for pro in self.proteins
+            ):
                 continue
             self.proteins.append(protein)
         self.count()
@@ -111,22 +119,39 @@ class Organism:
     @property
     def proteome(self):
         return "\n".join(
-            protein.fasta for proteins in self.records.values() for protein in proteins
+            protein.fasta
+            for scaffold in self.records.values()
+            for protein in scaffold.proteins
         )
 
     @classmethod
     def from_genbank(cls, file):
-        """Parse a GenBank file using BioPython and create a new Organism.
-        """
+        """Parse a GenBank file using BioPython and create a new Organism."""
         records = {
-            record.name: [
-                Protein.from_SeqFeature(feature, record)
-                for feature in record.features
-                if feature.type == "CDS"
-            ]
+            record.name: Scaffold(
+                name=record.id,
+                sequence=record.seq,
+                proteins=[
+                    Protein.from_SeqFeature(feature, record)
+                    for feature in record.features
+                    if feature.type == "CDS"
+                ]
+            )
             for record in SeqIO.parse(file, "genbank")
         }
         return cls(records)
+
+
+class Scaffold:
+    """A genomic scaffold."""
+    
+    def __init__(self, name, sequence, proteins):
+        self.name = name
+        self.sequence = sequence
+        self.proteins = proteins
+
+    def __len__(self):
+        return len(self.sequence)
 
 
 class Protein:
@@ -147,12 +172,17 @@ class Protein:
 
     def __str__(self):
         return "{} [{}:{}-{}({})]".format(
-            self.name, self.scaffold, self.start, self.end, self.strand
+            self.name,
+            self.scaffold,
+            self.start,
+            self.end,
+            self.strand
         )
 
     def summarise_repeats(self):
         return "\n\n".join(
-            f"{index: <5}{match.repeats[0].sequence}\n"
+            f"Score: {match.score}\n"
+            + f"{index: <5}{match.repeats[0].sequence}\n"
             + "\n".join(f"     {repeat.sequence}" for repeat in match.repeats[1:])
             for index, match in enumerate(self.repeats, 1)
         )
